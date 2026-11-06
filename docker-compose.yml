@@ -1,0 +1,55 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-wave}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-wave_dev_local}
+      POSTGRES_DB: ${POSTGRES_DB:-wave}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    build: ./backend
+    environment:
+      PORT: "3001"
+      DATABASE_URL: postgres://${POSTGRES_USER:-wave}:${POSTGRES_PASSWORD:-wave_dev_local}@db:5432/${POSTGRES_DB:-wave}
+      NODE_ENV: development
+      TMDB_API_KEY: ${TMDB_API_KEY:-}
+      TMDB_ACCESS_TOKEN: ${TMDB_ACCESS_TOKEN:-}
+      TMDB_LANGUAGE: ${TMDB_LANGUAGE:-ru-RU}
+      TMDB_PAGES: ${TMDB_PAGES:-1}
+    ports:
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - ./backend/src:/app/src
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/index.html:/app/index.html
+      - ./frontend/vite.config.js:/app/vite.config.js
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

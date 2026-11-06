@@ -1,0 +1,19 @@
+{
+  "name": "na-odnoy-volne-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npm run migrate && node --watch src/index.js",
+    "start": "npm run migrate && node src/index.js",
+    "migrate": "node scripts/migrate.js",
+    "sync:tmdb": "node scripts/sync-tmdb.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "pg": "^8.13.1",
+    "socket.io": "^4.8.1",
+    "dotenv": "^16.6.1"
+  }
+}
