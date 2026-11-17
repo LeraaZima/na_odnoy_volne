@@ -117,6 +117,24 @@ io.on('connection', socket => {
   const code = socket.data.roomCode;
   socket.join(channel(code));
   socket.join(`session:${socket.data.token}`);
+  const publishPresence=async()=>{
+    const room=await getRoom(code);
+    if(room) io.to(channel(code)).emit('room:presence',room.participants);
+  };
+  const heartbeat=async()=>{
+    await pool.query('DELETE FROM participant_connections WHERE expires_at<=now()');
+    const member=await verifyMember(code,socket.data.token);
+    if(!member || !socket.connected) return;
+    await pool.query("INSERT INTO participant_connections(socket_id,participant_id,expires_at) VALUES($1,$2,now()+interval '60 seconds') ON CONFLICT(socket_id) DO UPDATE SET expires_at=EXCLUDED.expires_at",[socket.id,member.id]);
+    if(!socket.connected) await pool.query('DELETE FROM participant_connections WHERE socket_id=$1',[socket.id]);
+    await publishPresence();
+  };
+  const heartbeatTimer=setInterval(()=>{void heartbeat().catch(()=>{});},20000);
+  socket.on('disconnect',()=>{
+    clearInterval(heartbeatTimer);
+    void pool.query('DELETE FROM participant_connections WHERE socket_id=$1',[socket.id]).then(publishPresence).catch(()=>{});
+  });
+  void heartbeat().catch(()=>{});
   void getRoom(code).then(async room => {
     if (!room || !await verifyMember(code, socket.data.token)) return socket.disconnect(true);
     if (!socket.connected) return;

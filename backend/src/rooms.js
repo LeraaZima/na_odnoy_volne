@@ -1,3 +1,4 @@
+import { roomLimit } from './config.js';
 import { pool, withTransaction } from './db.js';
 import { generateRoomCode, normalizeToken } from './validation.js';
 
@@ -13,10 +14,10 @@ export async function getRoom(code, db = pool) {
   if (!rows.length) return null;
   const room = rows[0];
   const members = await db.query(
-    `SELECT id, display_name, created_at FROM participants
+    `SELECT id, display_name, created_at, EXISTS(SELECT 1 FROM participant_connections c WHERE c.participant_id=participants.id AND c.expires_at>now()) AS online FROM participants
      WHERE room_id = $1 ORDER BY created_at, id`, [room.id]
   );
-  return { code: room.code, expiresAt: room.expires_at, ownerId: room.owner_id, filters: room.filters, selection: room.selection, revision: room.revision, participants: members.rows.map(p => ({ id: p.id, name: p.display_name })), maxParticipants: 2 };
+  return { code: room.code, expiresAt: room.expires_at, ownerId: room.owner_id, filters: room.filters, selection: room.selection, revision: room.revision, participants: members.rows.map(p => ({ id: p.id, name: p.display_name, online: p.online })), maxParticipants: roomLimit };
 }
 
 export async function verifyMember(code, token, db = pool) {
@@ -69,11 +70,12 @@ export async function joinRoom(code, name) {
     if (!rows.length) throw new RoomError('Комната не найдена или срок её действия истёк', 404);
     const id = rows[0].id;
     const count = await client.query('SELECT count(*)::int AS n FROM participants WHERE room_id=$1', [id]);
-    if (count.rows[0].n >= 2) throw new RoomError('Комната уже заполнена', 409);
+    if (count.rows[0].n >= roomLimit) throw new RoomError('Комната уже заполнена', 409);
     const member = await client.query(
       'INSERT INTO participants(room_id, display_name) VALUES($1,$2) RETURNING id, session_token',
       [id, name]
     );
+    await client.query('UPDATE rooms SET owner_id=COALESCE(owner_id,$2), revision=revision+1 WHERE id=$1', [id,member.rows[0].id]);
     const room = await getRoom(code, client);
     return { room, participant: { id: member.rows[0].id, name, token: member.rows[0].session_token } };
   });
@@ -81,12 +83,23 @@ export async function joinRoom(code, name) {
 
 export async function leaveRoom(code, token) {
   return withTransaction(async client => {
-    const { rows } = await client.query('SELECT id FROM rooms WHERE code=$1 FOR UPDATE', [code]);
+    const { rows } = await client.query('SELECT id,owner_id,selection FROM rooms WHERE code=$1 AND expires_at>now() FOR UPDATE', [code]);
     if (!rows.length) throw new RoomError('Комната не найдена', 404);
     const deleted = await client.query(
       'DELETE FROM participants WHERE room_id=$1 AND session_token=$2 RETURNING id', [rows[0].id, token]
     );
     if (!deleted.rowCount) throw new RoomError('Участник не найден', 403);
+    const row=rows[0];
+    if(row.selection?.participants?.some(p=>p.id===deleted.rows[0].id)) {
+      row.selection.cancelled=true;
+      await client.query('UPDATE selection_sessions SET cancelled=true WHERE id=$1',[row.selection.id]);
+      await client.query('UPDATE rooms SET selection=$2 WHERE id=$1',[row.id,JSON.stringify(row.selection)]);
+    }
+    if(row.owner_id===deleted.rows[0].id) {
+      const next=(await client.query('SELECT id FROM participants WHERE room_id=$1 ORDER BY EXISTS(SELECT 1 FROM participant_connections c WHERE c.participant_id=participants.id AND c.expires_at>now()) DESC,created_at,id LIMIT 1',[row.id])).rows[0];
+      await client.query('UPDATE rooms SET owner_id=$2 WHERE id=$1',[row.id,next?.id ?? null]);
+    }
+    await client.query('UPDATE rooms SET revision=revision+1 WHERE id=$1',[row.id]);
     return getRoom(code, client);
   });
 }

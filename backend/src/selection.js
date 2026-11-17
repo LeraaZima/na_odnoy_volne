@@ -25,14 +25,17 @@ export async function changeSelection(code, token, body, start = false) {
     const row = rows[0];
     const member = row && await verifyMember(code, token, client);
     if (!member) throw new RoomError('Нет доступа к комнате', 403);
-    if (row.owner_id !== member.id) throw new RoomError('Настройки меняет только создатель комнаты', 403);
+    if (row.owner_id !== member.id) throw new RoomError('Настройки меняет только ведущий комнаты', 403);
     if (!Number.isInteger(body?.revision) || body.revision !== row.revision) throw new RoomError('Настройки уже изменились. Обновите комнату и повторите.', 409);
+    if (start && body.newRound !== undefined && typeof body.newRound !== 'boolean') throw new RoomError('Проверьте признак нового раунда');
     if (start) {
       // Повторный запрос с актуальной версией не создаёт новую колоду.
-      if (!row.selection) {
+      if (!row.selection || body.newRound === true) {
+        const participants=(await client.query('SELECT id,display_name AS name FROM participants WHERE room_id=$1 ORDER BY created_at,id',[row.id])).rows;
+        if(participants.length<2) throw new RoomError('Для старта раунда нужны хотя бы два участника',409);
         const movies = await listMovies({ ...row.filters, genreId: null, limit: 200, offset: 0 }, client);
-        const selection = { id: randomUUID(), startedAt: new Date().toISOString(), movies };
-        await client.query('INSERT INTO selection_sessions(id,room_id,snapshot) VALUES($1,$2,$3)', [selection.id,row.id,JSON.stringify(selection)]);
+        const selection = { id: randomUUID(), startedAt: new Date().toISOString(), movies, participants, cancelled:false };
+        await client.query('INSERT INTO selection_sessions(id,room_id,snapshot,roster) VALUES($1,$2,$3,$4)', [selection.id,row.id,JSON.stringify(selection),JSON.stringify(participants)]);
         await client.query('UPDATE rooms SET selection=$2, revision=revision+1 WHERE id=$1', [row.id, JSON.stringify(selection)]);
       }
     } else {

@@ -20,7 +20,7 @@ test('голоса и Match в PostgreSQL', {skip:process.env.RUN_DB_TESTS!=='1'
     const code=created.room.code,a=created.participant.token;
     const guest=await api(`/rooms/${code}/join`,'POST',null,{name:'Тест голос Б'}),b=guest.participant.token;
     const outsider=await api('/rooms','POST',null,{name:'Тест чужой'});cleanup.push(outsider.room.code);
-    let room=(await api(`/rooms/${code}/selection`,'POST',a,{revision:0})).room;
+    let room=(await api(`/rooms/${code}/selection`,'POST',a,{revision:guest.room.revision})).room;
     const oldSelection=room.selection.id;
     const movies=room.selection.movies;
     assert.ok(movies.length>=6,'Для интеграционных тестов импортируйте каталог TMDB');
@@ -69,7 +69,7 @@ test('голоса и Match в PostgreSQL', {skip:process.env.RUN_DB_TESTS!=='1'
       assert.equal((await api(`/rooms/${code}/me`,'DELETE',b)).status,200);
       assert.equal((await vote(b,5)).status,403);
       assert.equal((await state(b)).status,403);
-      assert.equal((await vote(a,4)).match,null);
+      assert.equal((await vote(a,4)).status,409);
       assert.equal((await state(a)).matches.length,2);
     });
     const replacement=await api(`/rooms/${code}/join`,'POST',null,{name:'Тест голос В'}),c=replacement.participant.token;
@@ -78,6 +78,7 @@ test('голоса и Match в PostgreSQL', {skip:process.env.RUN_DB_TESTS!=='1'
       assert.ok(fresh.matches[0].participants.some(p=>p.name==='Тест голос Б'));
     });
     await t.test('новая подборка отделена от старой; старый запрос не голосует в новой',async()=>{
+      room=(await api(`/rooms/${code}`,'GET',a)).room;
       room=(await api(`/rooms/${code}/filters`,'PUT',a,{revision:room.revision,filters:{}})).room;
       room=(await api(`/rooms/${code}/selection`,'POST',a,{revision:room.revision})).room;
       assert.notEqual(room.selection.id,oldSelection);

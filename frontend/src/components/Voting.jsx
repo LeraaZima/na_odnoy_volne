@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { FilmCard, TmdbCredit } from './FilmSelection.jsx';
-import mascot from '../assets/wave_mascot_v3.png';
+import { WaveMascot } from './WaveMascot.jsx';
 
 function LoadState({voting}) {
   return voting.error ? <div className="inline-error" role="alert">{voting.error}<button className="btn btn--secondary" onClick={voting.reload}>Повторить загрузку</button></div> : <p role="status">Восстанавливаем ваши оценки…</p>;
@@ -17,7 +17,7 @@ export function SwipeDeck({room,voting,onBack,onFilters,onMatches,onMatch}) {
   const next=movies.find(m=>!rated.has(String(m.id)));
   const movie=pending?.movie || next;
   async function cast(choice) {
-    if(sending.current || !movie || !voting.state) return;
+    if(sending.current || !movie || !voting.state || room.selection.cancelled || !voting.state.eligible) return;
     sending.current=true;setError('');setMovement(0);
     setPending({movie,choice,phase:'saving'});
     try {
@@ -48,7 +48,7 @@ export function SwipeDeck({room,voting,onBack,onFilters,onMatches,onMatch}) {
   return <section className="selection-screen" aria-label="Колода фильмов">
     <div className="selection-nav"><button className="text-btn back-btn" onClick={onBack}>← Вернуться в комнату</button><button className="btn btn--secondary" onClick={onMatches}>Совпадения · {voting.state?.matches.length ?? '…'}</button></div>
     <div className="selection-heading"><p className="eyebrow">03 / ДОВЕРЬТЕСЬ ОЩУЩЕНИЮ</p><h1>Ваше кино. <span className="text-gradient">Ваша волна.</span></h1><p className="description">Вправо — нравится, влево — пропустить. Выбирайте в своём темпе: мы найдём то, что объединяет.</p></div>
-    {!voting.state ? <LoadState voting={voting}/> : movie ? <>
+    {!voting.state ? <LoadState voting={voting}/> : room.selection.cancelled ? <div className="panel empty-deck" role="status"><h2>Нужен новый раунд</h2><p>Состав изменился или подборка создана до обновления. Оценки и совпадения сохранены. Ведущий может начать новый раунд в фильтрах.</p></div> : !voting.state.eligible ? <div className="panel empty-deck" role="status"><h2>Вы ожидаете следующего раунда</h2><p>Вы вошли после старта. Попросите ведущего запустить новый раунд с текущим составом.</p></div> : movie ? <>
       <p className="deck-progress" role="status">Оценено {rated.size} из {movies.length}{pending?.phase==='saving' ? ' · Сохраняем оценку…' : ''}</p>
       <div className="swipe-zone" ref={zone} tabIndex="0" aria-label="Оценка фильма: стрелка вправо — нравится, влево — пропустить" aria-describedby="swipe-help" onKeyDown={event=>{
         if(event.repeat || event.target.closest('button,a,input,textarea') || !['ArrowLeft','ArrowRight'].includes(event.key)) return;
@@ -61,7 +61,7 @@ export function SwipeDeck({room,voting,onBack,onFilters,onMatches,onMatch}) {
       </div>
       <div className="deck-controls"><button className="vote-button vote-button--dislike" disabled={!!pending} onClick={()=>cast('dislike')}><span aria-hidden="true">×</span>Пропустить</button><button className="vote-button vote-button--like" disabled={!!pending} onClick={()=>cast('like')}><span aria-hidden="true">♡</span>Нравится</button></div>
       <p className="hint swipe-help" id="swipe-help">Перетащите карточку или используйте кнопки. На клавиатуре: Tab до колоды, затем ← / →.</p>
-    </> : <div className="panel empty-deck"><span aria-hidden="true">≈</span><h2>{movies.length?'Вы посмотрели всю подборку':'На этой волне пока тихо'}</h2><p>{movies.length?'Ваши оценки сохранены. Другой участник может продолжать — новые совпадения появятся автоматически.':'Подходящих фильмов нет. Попробуйте изменить фильтры.'}</p><button className="btn btn--primary" onClick={onMatches}>Посмотреть совпадения</button></div>}
+    </> : <div className="panel empty-deck"><span aria-hidden="true">≈</span><h2>{movies.length?'Вы посмотрели всю подборку':'На этой волне пока тихо'}</h2><p>{movies.length?'Ваши оценки сохранены. Остальные участники могут продолжать — новые совпадения появятся автоматически.':'Подходящих фильмов нет. Попробуйте изменить фильтры.'}</p><button className="btn btn--primary" onClick={onMatches}>Посмотреть совпадения</button></div>}
     {error && <p className="inline-error" role="alert">{error}</p>}
     {voting.state && voting.error && <LoadState voting={voting}/>}
     <button className="text-btn" onClick={onFilters}>Вернуться к фильтрам</button><TmdbCredit/>
@@ -81,8 +81,8 @@ export function MatchScreen({match,onContinue}) {
     <div className="match-waves" aria-hidden="true"/>
     <div className="match-particles" aria-hidden="true">{Array.from({length:9},(_,i)=><i key={i} style={{'--particle':i}}/>)}</div>
     <div className="match-content"><p className="eyebrow">ВАШ ВЫБОР СОВПАЛ</p><h1 id="match-heading">Вы на одной <span className="text-gradient">волне!</span></h1>
-      <div className="match-visual"><div className="match-poster"><MovieThumb movie={match.movie}/></div><img className="match-mascot" src={mascot} alt="Фирменная волна"/></div>
-      <h2>{match.movie.title}</h2><p>Этот фильм понравился вам обоим. Вечер становится ближе.</p>
+      <div className="match-visual"><div className="match-poster"><MovieThumb movie={match.movie}/></div><WaveMascot className="match-mascot" celebration/></div>
+      <h2>{match.movie.title}</h2><p>Этот фильм понравился всем участникам раунда. Вечер становится ближе.</p>
       <button autoFocus className="btn btn--primary" onClick={onContinue}>Продолжить выбор</button>
     </div>
   </dialog>;
@@ -102,7 +102,7 @@ export function Matches({voting,onBack,onDeck}) {
     {!voting.state ? <LoadState voting={voting}/> : voting.state.matches.length ? <div className="matches-list">{voting.state.matches.map(match=><details key={match.id} className="panel match-item" data-match-id={match.id}>
       <summary><div className="match-thumbnail"><MovieThumb movie={match.movie}/></div><div><h2>{match.movie.title}</h2><p>{match.movie.release_date?.slice(0,4) || 'Год неизвестен'} · ★ {match.movie.vote_average==null?'—':Number(match.movie.vote_average).toFixed(1)}</p><p>{match.movie.genres?.map(g=>g.name).join(' · ')}</p><small>{match.participants.map(p=>p.name).join(' + ')} · Подробнее ↓</small></div></summary>
       <FilmCard movie={match.movie}/>
-    </details>)}</div> : <div className="panel empty-deck"><span aria-hidden="true">♡</span><h2>Совпадения ещё впереди</h2><p>Когда оба поставят лайк одному фильму, он появится здесь.</p></div>}
+    </details>)}</div> : <div className="panel empty-deck"><span aria-hidden="true">♡</span><h2>Совпадения ещё впереди</h2><p>Когда все участники раунда поставят лайк одному фильму, он появится здесь.</p></div>}
     {voting.state && voting.error && <LoadState voting={voting}/>}<TmdbCredit/>
   </section>;
 }

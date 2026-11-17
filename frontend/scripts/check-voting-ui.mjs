@@ -111,7 +111,7 @@ try {
   await b.getByLabel('Как тебя зовут?').fill('UI Новый гость');
   await b.getByRole('textbox',{name:'Код комнаты'}).fill(code);
   await b.getByRole('button',{name:'Войти',exact:true}).click();
-  assert.equal(await card(b),first);
+  await b.getByText('Нужен новый раунд',{exact:true}).waitFor();
   assert.equal((await voting(b)).votes.length,0);
   assert.equal((await voting(b)).matches.length,3);
   await a.getByRole('button',{name:'Вернуться в комнату'}).click();

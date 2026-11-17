@@ -9,9 +9,9 @@ This is an educational MVP for the course «Стартап-экосистемы�
 - The frontend sends HTTP requests to `/api` and Socket.IO connects to the same origin via `/socket.io`. Vite proxies both to the backend.
 
 ## Product rules
-- For MVP, guest nicknames + temporary (24h) two-person rooms. Room code is six readable characters.
+- For MVP, guest nicknames + temporary (24h) rooms for 2–10 participants with a frozen round roster. Room code is six readable characters.
 - No in-app playback, payments, account registration, or AI recommendations.
-- Target journey: guest -> room -> second guest -> choose filters -> swipe movies -> match if both like -> matches list.
+- Target journey: guest -> room -> second guest -> choose filters -> swipe movies -> match if every round participant likes -> matches list.
 - Never label planned functionality as implemented.
 - Keep room and session data in PostgreSQL, not in server process memory. The browser may store its current guest session token locally.
 - Do not copy third-party poster images into the repo unless license permits. For the first demo use self-made gradients or seeded illustrative placeholders.
@@ -19,7 +19,7 @@ This is an educational MVP for the course «Стартап-экосистемы�
 ## Development discipline
 1. Read `README.md`, `docs/MVP.md`, and the code before making changes.
 2. Implement only the requested task; keep PRs small; separate frontend/backend tasks when possible.
-3. Use parameterized SQL, validate requests, prevent exceeding two participants, and handle expired rooms.
+3. Use parameterized SQL, validate requests, prevent exceeding the configured participant limit, and handle expired rooms.
 4. Every feature requires one reproducible manual check in README and automated tests where feasible.
 5. Do not claim Docker/build/test success without running them.
 6. New migrations go in `backend/sql/` but note: Docker PostgreSQL init scripts run only on a fresh database volume. For existing volumes use a proper migration process or manual SQL application.

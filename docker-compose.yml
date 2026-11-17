@@ -22,6 +22,7 @@ services:
       PORT: "3001"
       DATABASE_URL: postgres://${POSTGRES_USER:-wave}:${POSTGRES_PASSWORD:-wave_dev_local}@db:5432/${POSTGRES_DB:-wave}
       NODE_ENV: development
+      ROOM_MAX_PARTICIPANTS: ${ROOM_MAX_PARTICIPANTS:-10}
       TMDB_API_KEY: ${TMDB_API_KEY:-}
       TMDB_ACCESS_TOKEN: ${TMDB_ACCESS_TOKEN:-}
       TMDB_LANGUAGE: ${TMDB_LANGUAGE:-ru-RU}
@@ -41,12 +42,19 @@ services:
 
   frontend:
     build: ./frontend
+    environment:
+      WAVE_PUBLIC_HOST: ${WAVE_PUBLIC_HOST:-}
     ports:
       - "5173:5173"
     volumes:
       - ./frontend/src:/app/src
       - ./frontend/index.html:/app/index.html
       - ./frontend/vite.config.js:/app/vite.config.js
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5173').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
     depends_on:
       backend:
         condition: service_healthy

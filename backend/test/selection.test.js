@@ -20,14 +20,15 @@ test('подборка: права, реальная фильтрация, со�
     const token = created.participant.token;
     assert.equal(created.room.ownerId, created.participant.id);
     const guest = await api(`/rooms/${code}/join`,'POST',null,{name:'Тест гость'});
+    const initialRevision=guest.room.revision;
     const genres = (await api('/movies/genres')).genres.slice(0,2).map(g => g.id);
     const filters = { genreIds:genres, yearFrom:1900, yearTo:2200, minRating:0, maxRuntime:1000 };
     for (const who of [null, guest.participant.token]) {
-      assert.equal((await api(`/rooms/${code}/filters`,'PUT',who,{filters,revision:0})).status,403);
-      assert.equal((await api(`/rooms/${code}/selection`,'POST',who,{revision:0})).status,403);
+      assert.equal((await api(`/rooms/${code}/filters`,'PUT',who,{filters,revision:initialRevision})).status,403);
+      assert.equal((await api(`/rooms/${code}/selection`,'POST',who,{revision:initialRevision})).status,403);
     }
-    assert.equal((await api(`/rooms/${code}/filters`,'PUT',token,{filters:{genreIds:[99999]},revision:0})).status,400);
-    const saved = await api(`/rooms/${code}/filters`,'PUT',token,{filters,revision:0});
+    assert.equal((await api(`/rooms/${code}/filters`,'PUT',token,{filters:{genreIds:[99999]},revision:initialRevision})).status,400);
+    const saved = await api(`/rooms/${code}/filters`,'PUT',token,{filters,revision:initialRevision});
     assert.equal(saved.status,200);
     const started = await api(`/rooms/${code}/selection`,'POST',token,{revision:saved.room.revision});
     assert.equal(started.status,200);
@@ -36,7 +37,7 @@ test('подборка: права, реальная фильтрация, со�
     assert.deepEqual((await api(`/rooms/${code}`,'GET',guest.participant.token)).room.selection,started.room.selection);
     const repeated=await api(`/rooms/${code}/selection`,'POST',token,{revision:started.room.revision});
     assert.deepEqual(repeated.room.selection,started.room.selection);
-    assert.equal((await api(`/rooms/${code}/filters`,'PUT',token,{filters,revision:0})).status,409);
+    assert.equal((await api(`/rooms/${code}/filters`,'PUT',token,{filters,revision:initialRevision})).status,409);
     const empty=await api(`/rooms/${code}/filters`,'PUT',token,{filters:{yearFrom:1880,yearTo:1880},revision:started.room.revision});
     assert.equal(empty.room.selection,null);
     const emptyDeck=await api(`/rooms/${code}/selection`,'POST',token,{revision:empty.room.revision});

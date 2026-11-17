@@ -17,7 +17,8 @@ export function FilterScreen({ room, session, onRoom, onBack, onStart }) {
   const [reload, setReload] = useState(0);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  useEffect(() => { setDraft(room.filters); }, [room.revision]);
+  const savedFiltersKey = JSON.stringify(room.filters);
+  useEffect(() => { setDraft(room.filters); }, [savedFiltersKey]);
   useEffect(() => {
     let active = true;
     setLoading(true); setError('');
@@ -28,7 +29,7 @@ export function FilterScreen({ room, session, onRoom, onBack, onStart }) {
   }, [reload]);
   const dirty = JSON.stringify(draft) !== JSON.stringify(room.filters);
   const update = (key, value) => setDraft(current => ({ ...current, [key]: value }));
-  async function submit(event, start) {
+  async function submit(event, start, newRound = false) {
     event.preventDefault(); setBusy(true); setError('');
     try {
       let current = room;
@@ -37,7 +38,7 @@ export function FilterScreen({ room, session, onRoom, onBack, onStart }) {
         onRoom(current);
       }
       if (start) {
-        current = (await request(`/rooms/${room.code}/selection`, { method: 'POST', token: session.token, body: { revision: current.revision } })).room;
+        current = (await request(`/rooms/${room.code}/selection`, { method: 'POST', token: session.token, body: { revision: current.revision, newRound } })).room;
         onRoom(current);
         onStart();
       }
@@ -53,7 +54,7 @@ export function FilterScreen({ room, session, onRoom, onBack, onStart }) {
     <div className="selection-heading"><p className="eyebrow">02 / НАСТРАИВАЕМ ВЕЧЕР</p><h1>Какое кино <span className="text-gradient">сегодня?</span></h1><p className="description">Выберите рамки, а мы соберём общую колоду. Немного неожиданности — и только ваши жанры.</p></div>
     <div className="filter-layout">
       <form className="panel filter-panel" onSubmit={event => submit(event, true)}>
-        {!owner && <p className="notice" role="status">{room.participants.some(p => p.id === room.ownerId) ? 'Подборку настраивает создатель комнаты. Изменения появятся здесь автоматически.' : 'Создатель вышел из комнаты. Готовую колоду можно смотреть; для новых настроек создайте другую комнату.'}</p>}
+        {!owner && <p className="notice" role="status">{room.participants.some(p => p.id === room.ownerId) ? 'Подборку настраивает ведущий комнаты. Изменения появятся здесь автоматически.' : 'Ведущий вышел из комнаты. Готовую колоду можно смотреть; дождитесь обновления ведущего.'}</p>}
         {loading ? <p role="status">Загружаем жанры…</p> : <>
           {!genres.length && <button type="button" className="btn btn--secondary" onClick={() => setReload(n => n+1)}>Повторить загрузку жанров</button>}
           <fieldset disabled={!owner || busy}>
@@ -70,13 +71,15 @@ export function FilterScreen({ room, session, onRoom, onBack, onStart }) {
           </fieldset>
           {owner && <div className="filter-actions">
             <button type="button" className="btn btn--secondary" disabled={busy || !dirty} onClick={event => submit(event, false)}>Сохранить настройки</button>
-            <button className="btn btn--primary" disabled={busy}>{busy ? 'Собираем подборку…' : 'Начать выбор'} <span aria-hidden="true">→</span></button>
+            {room.selection && <button type="button" className="btn btn--secondary" disabled={busy || room.participants.length<2} onClick={event=>submit(event,true,true)}>Новый раунд с текущим составом</button>}
+            <button className="btn btn--primary" disabled={busy || room.participants.length<2}>{busy ? 'Собираем подборку…' : 'Начать выбор'} <span aria-hidden="true">→</span></button>
           </div>}
-          <p className="hint" role="status">{dirty ? 'Есть несохранённые изменения. «Начать выбор» также сохраняет их.' : 'Настройки сохранены и доступны обоим участникам.'}</p>
+          <p className="hint">Для старта нужны минимум 2 участника. В раунд попадут все, кто уже вошёл в комнату, включая временно отключённых.</p>
+          <p className="hint" role="status">{dirty ? 'Есть несохранённые изменения. «Начать выбор» также сохраняет их.' : 'Настройки сохранены и доступны всем участникам.'}</p>
         </>}
         {error && <p className="inline-error" role="alert">{error}</p>}
       </form>
-      <aside className="selection-note panel"><div className="orbit-mark" aria-hidden="true">≈</div><h2>Одна подборка.<br/>Два взгляда.</h2><p>Одинаковые фильмы в одинаковом порядке — каждый смотрит в своём темпе.</p><p className="hint">Сохранение новых фильтров заменит текущую подборку для обоих. Оценки относятся к текущей подборке; прошлые совпадения останутся в истории комнаты.</p></aside>
+      <aside className="selection-note panel"><div className="orbit-mark" aria-hidden="true">≈</div><h2>Одна подборка.<br/>Разные взгляды.</h2><p>Одинаковые фильмы в одинаковом порядке — каждый смотрит в своём темпе.</p><p className="hint">Сохранение новых фильтров заменит текущую подборку для всех. Оценки относятся к текущей подборке; прошлые совпадения останутся в истории комнаты.</p></aside>
     </div><TmdbCredit />
   </section>;
 }

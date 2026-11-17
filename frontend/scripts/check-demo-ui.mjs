@@ -12,6 +12,7 @@ try {
   await page.getByLabel('Как тебя зовут?').fill('Аудит демо');
   await page.getByRole('button', {name:'Создать комнату'}).click();
   code = await page.locator('.invite-box__code').innerText();
+  await page.evaluate(async code=>{await fetch('/api/rooms/'+code+'/join',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'Гость аудита'})});},code);
   for (const width of [390, 1280]) {
     await page.setViewportSize({width, height:900});
     for (const theme of ['light','dark']) {

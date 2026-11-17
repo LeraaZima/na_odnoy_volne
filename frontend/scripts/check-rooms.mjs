@@ -42,8 +42,8 @@ try {
   let update = event(a, 'room:updated', room => room?.participants.length === 1);
   a.connect(); await update;
   update = event(a, 'room:updated', room => room?.participants.length === 2);
-  const attempts = await Promise.all(['Антон', 'Третий'].map(name => api(`/rooms/${code}/join`, 'POST', { name })));
-  assert.deepEqual(attempts.map(r => r.status).sort(), [201, 409]);
+  const attempts = await Promise.all(['Антон'].map(name => api(`/rooms/${code}/join`, 'POST', { name })));
+  assert.deepEqual(attempts.map(r => r.status).sort(), [201]);
   const second = attempts.find(r => r.status === 201).data.participant;
   sessions.push({ code, token: second.token });
   await update;
@@ -59,13 +59,14 @@ try {
   const rejected = event(invalid, 'connect_error');
   invalid.connect(); assert.match((await rejected).message, /Нет доступа/);
   const filters = { genreIds: [], yearFrom: 1900, yearTo: 2200, minRating: 5, maxRuntime: 180 };
-  const filtersEvent = event(b, 'room:updated', room => room?.revision === 1);
-  assert.equal((await api(`/rooms/${code}/filters`, 'PUT', { filters, revision: 0 }, second.token)).status, 403);
-  assert.equal((await api(`/rooms/${code}/filters`, 'PUT', { filters, revision: 0 }, first.token)).status, 200);
+  const revision=(await api(`/rooms/${code}`,'GET',null,first.token)).data.room.revision;
+  const filtersEvent = event(b, 'room:updated', room => room?.revision === revision+1);
+  assert.equal((await api(`/rooms/${code}/filters`, 'PUT', { filters, revision }, second.token)).status, 403);
+  assert.equal((await api(`/rooms/${code}/filters`, 'PUT', { filters, revision }, first.token)).status, 200);
   assert.deepEqual((await filtersEvent).filters, filters);
   const deckA = event(a, 'room:updated', room => !!room?.selection);
   const deckB = event(b, 'room:updated', room => !!room?.selection);
-  const started = await api(`/rooms/${code}/selection`, 'POST', { revision: 1 }, first.token);
+  const started = await api(`/rooms/${code}/selection`, 'POST', { revision: revision+1 }, first.token);
   assert.equal(started.status, 200);
   const [stateA, stateB] = await Promise.all([deckA, deckB]);
   assert.deepEqual(stateA.selection, stateB.selection);
@@ -105,7 +106,7 @@ try {
   assert.equal((await api(`/rooms/${code}`, 'GET', null, second.token)).status, 403);
   const denied = event(b, 'connect_error');
   b.connect(); assert.match((await denied).message, /Нет доступа/);
-  console.log('OK: создание, срок 24 ч, конкурентный вход и лимит 2, HTTP, polling, WebSocket, переподключение, неверные токены, выход и отзыв доступа.');
+  console.log('OK: создание, срок 24 ч, вход двух участников, HTTP, polling, WebSocket, переподключение, неверные токены, выход и отзыв доступа.');
 } finally {
   sockets.forEach(socket => socket.disconnect());
   for (const session of sessions) await api(`/rooms/${session.code}/me`, 'DELETE', null, session.token);

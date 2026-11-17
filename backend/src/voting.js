@@ -27,7 +27,7 @@ async function stateFor(client,room,member) {
   const matches = (await client.query(
     'SELECT id,selection_id AS "selectionId",movie,participants,created_at AS "createdAt" FROM matches WHERE room_id=$1 ORDER BY created_at,id', [room.id]
   )).rows;
-  return { selectionId: room.selection?.id ?? null, version:room.voting_revision, votes, matches };
+  return { selectionId: room.selection?.id ?? null, version:room.voting_revision, eligible:room.selection?.participants?.some(p=>p.id===member.id) ?? false, cancelled:room.selection?.cancelled ?? false, votes, matches };
 }
 
 export async function getVotingState(code,token) {
@@ -42,6 +42,7 @@ export async function saveVote(code,token,body) {
   return withTransaction(async client => {
     const {room,member}=await lockRoom(client,code,token);
     if (room.selection?.id !== vote.selectionId) throw new RoomError('Подборка изменилась. Откройте текущую колоду.',409);
+    if(!room.selection.participants?.some(p=>p.id===member.id)) throw new RoomError('Вы ожидаете следующего раунда',403);
     const movie=room.selection.movies.find(m=>String(m.id)===vote.movieId);
     if (!movie) throw new RoomError('Фильм отсутствует в текущей колоде');
     const previous=(await client.query('SELECT choice FROM votes WHERE selection_id=$1 AND participant_id=$2 AND movie_tmdb_id=$3',[vote.selectionId,member.id,vote.movieId])).rows[0];
@@ -49,6 +50,7 @@ export async function saveVote(code,token,body) {
       if(previous.choice!==vote.choice) throw new RoomError('Фильм уже оценён. Изменение голоса недоступно.',409);
       return { state: await stateFor(client,room,member), match:null, inserted:false };
     }
+    if(room.selection.cancelled) throw new RoomError('Участник вышел. Нужен новый раунд.',409);
     const rated=(await client.query('SELECT movie_tmdb_id::text AS id FROM votes WHERE selection_id=$1 AND participant_id=$2',[vote.selectionId,member.id])).rows;
     const ids=new Set(rated.map(v=>v.id));
     const next=room.selection.movies.find(m=>!ids.has(String(m.id)));
@@ -56,11 +58,11 @@ export async function saveVote(code,token,body) {
     await client.query('INSERT INTO votes(room_id,selection_id,participant_id,movie_tmdb_id,choice) VALUES($1,$2,$3,$4,$5)',[room.id,vote.selectionId,member.id,vote.movieId,vote.choice]);
     let match=null;
     if(vote.choice==='like') {
-      const pair=(await client.query(`SELECT p.id,p.display_name AS name FROM participants p JOIN votes v ON v.participant_id=p.id
-        WHERE p.room_id=$1 AND v.room_id=$1 AND v.selection_id=$2 AND v.movie_tmdb_id=$3 AND v.choice='like' ORDER BY p.id`,[room.id,vote.selectionId,vote.movieId])).rows;
-      if(pair.length===2) {
+      const roster=room.selection.participants;
+      const likes=(await client.query("SELECT count(*)::int AS n FROM votes WHERE selection_id=$1 AND movie_tmdb_id=$2 AND choice='like' AND participant_id=ANY($3::uuid[])",[vote.selectionId,vote.movieId,roster.map(p=>p.id)])).rows[0].n;
+      if(roster.length>=2 && likes===roster.length) {
         match=(await client.query(`INSERT INTO matches(room_id,selection_id,movie_tmdb_id,movie,participants) VALUES($1,$2,$3,$4,$5)
-          ON CONFLICT(selection_id,movie_tmdb_id) DO NOTHING RETURNING id,selection_id AS "selectionId",movie,participants,created_at AS "createdAt"`,[room.id,vote.selectionId,vote.movieId,JSON.stringify(movie),JSON.stringify(pair)])).rows[0] ?? null;
+          ON CONFLICT(selection_id,movie_tmdb_id) DO NOTHING RETURNING id,selection_id AS "selectionId",movie,participants,created_at AS "createdAt"`,[room.id,vote.selectionId,vote.movieId,JSON.stringify(movie),JSON.stringify(roster)])).rows[0] ?? null;
       }
     }
     room.voting_revision=(await client.query('UPDATE rooms SET voting_revision=voting_revision+1 WHERE id=$1 RETURNING voting_revision',[room.id])).rows[0].voting_revision;
